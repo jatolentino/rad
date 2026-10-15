@@ -1,0 +1,4 @@
+data/**
+!data/.gitkeep
+doc1.md
+doc2.md
