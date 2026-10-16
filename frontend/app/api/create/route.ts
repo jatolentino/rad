@@ -2,7 +2,12 @@ import { randomInt } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import OpenAI from "openai";
-import { buildRoster, isOmitted, missingKey } from "@/lib/build-roster";
+import {
+  buildRoster,
+  isOmitted,
+  missingKey,
+  normalizeCreatePayload,
+} from "@/lib/build-roster";
 import { getDataDir, resetDataDir, writeDataFile } from "@/lib/data-dir";
 import { emailPath, getRole, ROLES } from "@/lib/roles";
 import type { CreateLlmResponse, RosterWorker } from "@/lib/types";
@@ -118,7 +123,7 @@ function systemPrompt(compliantRoleIds: string[]): string {
     "You generate synthetic HR staffing clearance documents for a simulation.",
     "Invent realistic US worker names (first name + last initial, e.g. Jon C.).",
     "slugs are lowercase kebab-case of the name (jon-c).",
-    "Return one worker per role in the catalog. Do not invent roles.",
+    `Return EXACTLY ${ROLES.length} workers: one for every roleId in the catalog. Never skip a role. Do not invent roles.`,
     `These roleIds MUST fully comply: ${JSON.stringify(compliantRoleIds)}.`,
     "For each fully compliant worker: include all three required documents. Do not list them in missing.",
     "Fully compliant documents MUST pass clearance: unexpired certs (expiry 2027 or later), completed I-9 Section 1 and Section 2, clear background check, Hepatitis B result: negative, TB result: negative, drug test result exactly negative.",
@@ -135,6 +140,9 @@ function userPrompt(compliantRoleIds: string[]): string {
   return [
     "Role catalog (JSON):",
     JSON.stringify(catalog),
+    "",
+    `Include every roleId exactly once (${ROLES.length} workers):`,
+    JSON.stringify(ROLES.map((role) => role.id)),
     "",
     "Fully compliant roleIds (all 3 requirements present and passing):",
     JSON.stringify(compliantRoleIds),
@@ -200,7 +208,9 @@ export async function POST() {
       );
     }
 
-    const payload = JSON.parse(text) as CreateLlmResponse;
+    const payload = normalizeCreatePayload(
+      JSON.parse(text) as CreateLlmResponse,
+    );
     const { roster, missing } = buildRoster(payload);
     const compliantRoles = new Set(compliantRoleIds);
     markCompliantComplete(roster.workers, missing, compliantRoleIds);

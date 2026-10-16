@@ -18,49 +18,106 @@ function missingKey(slug: string, requirementId: string): string {
   return `${slug}::${requirementId}`;
 }
 
+const PLACEHOLDER_NAMES = [
+  "Riley F.",
+  "Morgan H.",
+  "Quinn W.",
+  "Avery C.",
+  "Jamie N.",
+  "Drew E.",
+  "Cameron S.",
+  "Parker G.",
+  "Taylor P.",
+  "Reese V.",
+];
+
+function slugFromName(name: string): string {
+  return name.toLowerCase().replace(/\./g, "").trim().replace(/\s+/g, "-");
+}
+
+export function normalizeCreatePayload(
+  raw: Partial<CreateLlmResponse> | null | undefined,
+): CreateLlmResponse {
+  return {
+    workers: Array.isArray(raw?.workers) ? raw.workers : [],
+    missing: Array.isArray(raw?.missing) ? raw.missing : [],
+    certs: Array.isArray(raw?.certs) ? raw.certs : [],
+    emails: Array.isArray(raw?.emails) ? raw.emails : [],
+    drugTests: Array.isArray(raw?.drugTests) ? raw.drugTests : [],
+  };
+}
+
+function oneWorkerPerRole(
+  generated: CreateLlmResponse["workers"],
+): CreateLlmResponse["workers"] {
+  const byRole = new Map<string, CreateLlmResponse["workers"][number]>();
+  for (const worker of generated) {
+    if (!ROLES.some((role) => role.id === worker.roleId)) {
+      continue;
+    }
+    if (!byRole.has(worker.roleId)) {
+      byRole.set(worker.roleId, worker);
+    }
+  }
+
+  const usedSlugs = new Set(
+    [...byRole.values()].map((worker) => worker.slug).filter(Boolean),
+  );
+  let placeholder = 0;
+
+  return ROLES.map((role) => {
+    const existing = byRole.get(role.id);
+    if (existing?.name && existing.slug) {
+      return existing;
+    }
+    let name = PLACEHOLDER_NAMES[placeholder] ?? `Worker ${placeholder + 1}`;
+    placeholder += 1;
+    let slug = slugFromName(name);
+    if (usedSlugs.has(slug)) {
+      slug = `${slug}-${role.id}`;
+    }
+    usedSlugs.add(slug);
+    return { name, slug, roleId: role.id };
+  });
+}
+
 export function buildRoster(payload: CreateLlmResponse): {
   roster: Roster;
   missing: Set<string>;
 } {
-  const byRole = new Map(payload.workers.map((worker) => [worker.roleId, worker]));
+  const normalized = normalizeCreatePayload(payload);
+  const generated = oneWorkerPerRole(normalized.workers);
   const missing = new Set(
-    payload.missing.map((item) => missingKey(item.slug, item.requirementId)),
+    normalized.missing.map((item) => missingKey(item.slug, item.requirementId)),
   );
 
-  if (payload.workers.length !== ROLES.length) {
-    throw new Error(`Expected ${ROLES.length} workers, got ${payload.workers.length}`);
-  }
-
   const slugs = new Set<string>();
-  const workers: RosterWorker[] = ROLES.map((role) => {
-    const generated = byRole.get(role.id);
-    if (!generated) {
-      throw new Error(`Missing worker for role ${role.id}`);
+  const workers: RosterWorker[] = ROLES.map((role, index) => {
+    const item = generated[index];
+    if (slugs.has(item.slug)) {
+      throw new Error(`Duplicate slug ${item.slug}`);
     }
-    if (slugs.has(generated.slug)) {
-      throw new Error(`Duplicate slug ${generated.slug}`);
-    }
-    slugs.add(generated.slug);
+    slugs.add(item.slug);
 
     return {
-      name: generated.name,
-      slug: generated.slug,
+      name: item.name,
+      slug: item.slug,
       roleId: role.id,
       roleTitle: role.title,
       requirements: role.requirements.map((requirement) => ({
         id: requirement.id,
         label: requirement.label,
         kind: requirement.kind,
-        expectedPath: expectedPath(generated.slug, requirement),
+        expectedPath: expectedPath(item.slug, requirement),
       })),
     };
   });
 
-  for (const key of missing) {
+  for (const key of [...missing]) {
     const [slug, requirementId] = key.split("::");
     const worker = workers.find((item) => item.slug === slug);
     if (!worker || !worker.requirements.some((req) => req.id === requirementId)) {
-      throw new Error(`Missing document does not match a roster requirement: ${key}`);
+      missing.delete(key);
     }
   }
 

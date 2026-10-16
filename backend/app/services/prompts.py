@@ -26,7 +26,8 @@ Result rules:
 - If the document does not state a real outcome, use denied (or missing if there is no usable document).
 """
 
-_logged_prompt_source = False
+class _PromptLog:
+    source_logged = False
 
 
 def local_prompt(
@@ -48,7 +49,6 @@ def build_prompt(
     document: str,
 ) -> str:
     """Langfuse prompt if it exists; otherwise the local fallback."""
-    global _logged_prompt_source
     local = local_prompt(worker_name, requirement, document)
     client = langfuse_client()
     if client is None:
@@ -61,8 +61,8 @@ def build_prompt(
             requirement_type=requirement.type,
             document=document[:12000],
         )
-        if not _logged_prompt_source:
-            _logged_prompt_source = True
+        if not _PromptLog.source_logged:
+            _PromptLog.source_logged = True
             logger.info(
                 "Using Langfuse prompt 'parse-requirement' from %s",
                 langfuse_host(),

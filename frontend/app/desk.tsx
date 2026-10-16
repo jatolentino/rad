@@ -117,8 +117,12 @@ function DeskApp() {
         <div className="flex items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-semibold text-slate-900 shadow-sm">
-                d.
+              <span
+                className="flex h-8 items-center justify-center rounded-full bg-white px-2.5 text-xs font-semibold tracking-wide text-slate-900 shadow-sm"
+                title="Internal HR Desk"
+                aria-label="Internal HR Desk"
+              >
+                IHD
               </span>
               <span className="text-sm font-medium text-slate-700">Clearance</span>
             </div>

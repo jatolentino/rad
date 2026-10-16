@@ -3,7 +3,6 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, Asyn
 from app.config import settings
 from app.models import WorkerRecord, WorkersPayload
 
-_client: AsyncIOMotorClient | None = None
 DOC_ID = "latest"
 
 
@@ -13,17 +12,17 @@ class WorkerRepository:
     def __init__(self) -> None:
         self.pre_collection = settings.mongodb_pre_collection
         self.processed_collection = settings.mongodb_processed_collection
+        self._mongo: AsyncIOMotorClient | None = None
 
-    def _client(self) -> AsyncIOMotorClient:
-        global _client
-        if _client is None:
+    def _mongo_client(self) -> AsyncIOMotorClient:
+        if self._mongo is None:
             if not settings.mongodb_uri:
                 raise RuntimeError("MONGODB_URI is missing in backend/.env")
-            _client = AsyncIOMotorClient(settings.mongodb_uri)
-        return _client
+            self._mongo = AsyncIOMotorClient(settings.mongodb_uri)
+        return self._mongo
 
     def _db(self) -> AsyncIOMotorDatabase:
-        return self._client()[settings.mongodb_db]
+        return self._mongo_client()[settings.mongodb_db]
 
     def _collection(self, name: str) -> AsyncIOMotorCollection:
         return self._db()[name]
