@@ -2,7 +2,15 @@
 
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 import type { PayloadAction } from "@reduxjs/toolkit";
-import type { Roster, RosterWorker, SimPayload, SimWorker } from "@/lib/types";
+import {
+  createRoster,
+  fetchProcessed,
+  loadDeskData,
+  resetRoster,
+  simulateComplete,
+  startSimulate,
+} from "@/lib/api/desk";
+import type { RosterWorker, SimPayload, SimWorker } from "@/lib/types";
 
 type DeskState = {
   workers: RosterWorker[];
@@ -26,86 +34,41 @@ const initialState: DeskState = {
   error: null,
 };
 
-function readError(body: { error?: string; detail?: string }, fallback: string) {
-  return body.error ?? body.detail ?? fallback;
-}
-
-export function simulateComplete(payload: SimPayload): boolean {
-  if (payload.error) {
-    return false;
-  }
-  if (payload.complete && (payload.workers?.length ?? 0) > 0) {
-    return true;
-  }
-  return (
-    (payload.workers?.length ?? 0) > 0 &&
-    payload.workers.every((worker) =>
-      Object.values(worker.requirements).every(
-        (requirement) => typeof requirement.status === "string",
-      ),
-    )
-  );
-}
+export { simulateComplete };
 
 export const loadDesk = createAsyncThunk("desk/load", async () => {
-  const response = await fetch("/api/roster");
-  const roster = (await response.json()) as Roster & { error?: string };
-  if (!response.ok) {
-    throw new Error(readError(roster, "Could not load the roster."));
-  }
-  let simWorkers: SimWorker[] = [];
-  const processed = await fetch("/backend/api/v1/data-processed");
-  if (processed.ok) {
-    const body = (await processed.json()) as SimPayload;
-    if (body.workers?.length) {
-      simWorkers = body.workers;
-    }
-  }
-  if (!simWorkers.length) {
-    const pre = await fetch("/backend/api/v1/pre-processed-data");
-    if (pre.ok) {
-      const body = (await pre.json()) as SimPayload;
-      simWorkers = body.workers ?? [];
-    }
-  }
-  return { workers: roster.workers ?? [], simWorkers };
+  return loadDeskData();
 });
 
 export const createDesk = createAsyncThunk("desk/create", async () => {
-  const response = await fetch("/api/create", { method: "POST" });
-  const body = (await response.json()) as Roster & { error?: string };
-  if (!response.ok) {
-    throw new Error(readError(body, "Create failed"));
-  }
+  const body = await createRoster();
   return body.workers ?? [];
 });
 
 export const resetDesk = createAsyncThunk("desk/reset", async () => {
-  const response = await fetch("/api/reset", { method: "POST" });
-  const body = (await response.json()) as { error?: string };
-  if (!response.ok) {
-    throw new Error(readError(body, "Reset failed"));
-  }
+  await resetRoster();
 });
 
 export const simulateDesk = createAsyncThunk(
   "desk/simulate",
   async (_, { dispatch, rejectWithValue }) => {
-    const started = await fetch("/backend/api/v1/simulate", { method: "POST" });
-    const startedBody = (await started.json()) as SimPayload & { detail?: string };
-    if (!started.ok) {
-      return rejectWithValue(startedBody.detail ?? "Simulate failed");
+    let startedBody: SimPayload;
+    try {
+      startedBody = await startSimulate();
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : "Simulate failed",
+      );
     }
     if (startedBody.workers?.length) {
       dispatch(simWorkersReceived(startedBody.workers));
     }
     for (let attempt = 0; attempt < 90; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      const response = await fetch("/backend/api/v1/data-processed");
-      if (!response.ok) {
+      const body = await fetchProcessed();
+      if (!body) {
         continue;
       }
-      const body = (await response.json()) as SimPayload;
       if (body.error) {
         return rejectWithValue(body.error);
       }

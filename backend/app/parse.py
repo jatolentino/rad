@@ -2,85 +2,33 @@ from __future__ import annotations
 
 import csv
 import io
-import logging
-import re
+
 from langchain_openai import ChatOpenAI
-from langfuse import Langfuse
-from langfuse.callback import CallbackHandler
 
 from app.config import settings
 from app.ingest import absolute_path
-from app.models import ParseVerdict, RequirementRecord, ResultLabel
+from app.models import ParseVerdict, RequirementRecord
+from app.services.clearance import (
+    is_infection_screen,
+    requirement_clears,
+    status_label,
+)
+from app.services.langfuse import langfuse_client, langfuse_handler
+from app.services.prompts import FALLBACK_PROMPT, build_prompt
 
-FALLBACK_PROMPT = """You extract the outcome of one staffing clearance document.
-
-Worker: {worker_name}
-Requirement: {requirement_name}
-Type: {requirement_type}
-
-Document:
-{document}
-
-Return:
-- is_there_one: true only if this document is about this worker and this requirement.
-- result: one of positive, negative, approved, denied, missing.
-
-Result rules:
-- Hepatitis B / Hep B / TB: use positive or negative. Positive means the worker HAS the infection. Negative means they do not. Do not treat 'processed' or 'documented' as negative or approved.
-- Certificates, I-9, background checks, drug tests: use approved if the credential is currently valid (unexpired cert, completed I-9, clear background, negative drug screen). Otherwise denied.
-- If the document does not state a real outcome, use denied (or missing if there is no usable document).
-"""
-
-logger = logging.getLogger(__name__)
-
-_langfuse: Langfuse | None = None
-_langfuse_host: str | None = None
-_langfuse_disabled = False
-_langfuse_warned = False
-_logged_prompt_source = False
-
-
-def langfuse_client() -> Langfuse | None:
-    global _langfuse, _langfuse_host, _langfuse_disabled, _langfuse_warned
-    if _langfuse_disabled:
-        return None
-    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
-        _langfuse_disabled = True
-        return None
-    if _langfuse is not None:
-        return _langfuse
-    host = (settings.langfuse_host or "").rstrip("/")
-    client = Langfuse(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=host,
-    )
-    try:
-        ok = bool(client.auth_check())
-    except Exception:
-        ok = False
-    if ok:
-        _langfuse = client
-        _langfuse_host = host
-        return _langfuse
-    _langfuse_disabled = True
-    if not _langfuse_warned:
-        _langfuse_warned = True
-        logger.warning(
-            "Langfuse rejected the API keys for LANGFUSE_HOST=%s.",
-            host,
-        )
-    return None
-
-
-def langfuse_handler() -> CallbackHandler | None:
-    if not langfuse_client() or not _langfuse_host:
-        return None
-    return CallbackHandler(
-        public_key=settings.langfuse_public_key,
-        secret_key=settings.langfuse_secret_key,
-        host=_langfuse_host,
-    )
+__all__ = [
+    "FALLBACK_PROMPT",
+    "build_prompt",
+    "display_name",
+    "file_present",
+    "is_infection_screen",
+    "langfuse_client",
+    "langfuse_handler",
+    "make_llm",
+    "parse_requirement",
+    "requirement_clears",
+    "status_label",
+]
 
 
 def file_present(requirement: RequirementRecord, worker_name: str) -> tuple[bool, str]:
@@ -108,41 +56,6 @@ def matching_csv_row(csv_text: str, worker_name: str) -> dict[str, str] | None:
 
 def csv_row_document(row: dict[str, str]) -> str:
     return "\n".join(f"{key}: {value}" for key, value in row.items())
-
-
-def build_prompt(
-    worker_name: str,
-    requirement: RequirementRecord,
-    document: str,
-) -> str:
-    global _logged_prompt_source
-    local = FALLBACK_PROMPT.format(
-        worker_name=worker_name,
-        requirement_name=requirement.name,
-        requirement_type=requirement.type,
-        document=document[:12000],
-    )
-    client = langfuse_client()
-    if client is None:
-        return local
-    try:
-        prompt = client.get_prompt("parse-requirement")
-        compiled = prompt.compile(
-            worker_name=worker_name,
-            requirement_name=requirement.name,
-            requirement_type=requirement.type,
-            document=document[:12000],
-        )
-        if not _logged_prompt_source:
-            _logged_prompt_source = True
-            logger.info(
-                "Using Langfuse prompt 'parse-requirement' from %s",
-                _langfuse_host,
-            )
-        return f"{compiled}\n\n{local}"
-    except Exception:
-        logger.info("Langfuse prompt missing; using the local parse prompt.")
-        return local
 
 
 def make_llm() -> ChatOpenAI:
@@ -179,35 +92,3 @@ def display_name(worker_key: str) -> str:
     if len(parts) >= 2 and len(parts[-1]) == 1:
         return f"{' '.join(parts[:-1])} {parts[-1]}."
     return worker_key.replace("_", " ")
-
-
-def is_infection_screen(name: str) -> bool:
-    return bool(
-        re.search(r"\b(hep(?:atitis)?(?:\s*b)?|tb|tuberculosis)\b", name, re.I)
-    )
-
-
-def status_label(verdict: ParseVerdict, requirement: RequirementRecord) -> ResultLabel:
-    if not verdict.is_there_one:
-        return "missing"
-    raw = verdict.result.lower().replace("_", " ").strip()
-    if raw == "not approved":
-        raw = "denied"
-    if is_infection_screen(requirement.name):
-        if raw == "positive":
-            return "positive"
-        if raw == "negative":
-            return "negative"
-        return "denied"
-    if raw in {"approved", "negative"}:
-        return "approved"
-    return "denied"
-
-
-def requirement_clears(status: str | None, name: str) -> bool:
-    if not status:
-        return False
-    value = status.lower()
-    if is_infection_screen(name):
-        return value == "negative"
-    return value == "approved"

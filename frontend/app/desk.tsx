@@ -11,6 +11,11 @@ import {
 } from "@/lib/store/deskSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import type { RootState } from "@/lib/store";
+import {
+  requirementClears,
+  resultTone,
+  statusLabel,
+} from "@/lib/clearance";
 import type { SimRequirement, SimWorker } from "@/lib/types";
 import { rosterKey } from "@/lib/types";
 
@@ -28,48 +33,6 @@ const AVATAR_TONES = [
 function initials(name: string): string {
   const parts = name.replace(/\./g, "").trim().split(/\s+/);
   return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
-}
-
-function statusLabel(requirement?: SimRequirement): string | null {
-  const value = requirement?.status;
-  if (typeof value !== "string" || !value) {
-    return null;
-  }
-  return value;
-}
-
-function isInfectionScreen(name: string): boolean {
-  return /\b(hep(?:atitis)?(?:\s*b)?|tb|tuberculosis)\b/i.test(name);
-}
-
-function requirementClears(requirement?: SimRequirement): boolean {
-  const value = statusLabel(requirement)?.toLowerCase();
-  if (!value || !requirement) {
-    return false;
-  }
-  if (isInfectionScreen(requirement.name)) {
-    return value === "negative";
-  }
-  return value === "approved";
-}
-
-function resultTone(status?: string | null): string {
-  if (!status) {
-    return "text-slate-400";
-  }
-  const value = status.toLowerCase();
-  if (value === "approved" || value === "negative") {
-    return "text-emerald-700";
-  }
-  if (
-    value === "positive" ||
-    value === "denied" ||
-    value === "not approved" ||
-    value === "missing"
-  ) {
-    return "text-red-700";
-  }
-  return "text-slate-600";
 }
 
 function ReqCell({ requirement }: { requirement?: SimRequirement }) {

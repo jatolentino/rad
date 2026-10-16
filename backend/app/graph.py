@@ -11,7 +11,8 @@ from langgraph.graph import END, START, StateGraph
 from app.db import PRE_COLLECTION, PROCESSED_COLLECTION, save_payload, serialize_workers
 from app.ingest import build_preprocessed
 from app.models import WorkerRecord
-from app.parse import parse_requirement, status_label
+from app.parse import parse_requirement
+from app.services.clearance import status_label
 
 logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 10
