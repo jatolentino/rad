@@ -1,0 +1,66 @@
+[
+  {
+    "id": "cert-pass",
+    "worker_name": "Jon C.",
+    "requirement_name": "Forklift cert",
+    "requirement_type": "certificate",
+    "document": "# Forklift operator certificate\n\n- Worker: Jon C.\n- Certificate: OSHA-powered industrial truck\n- Issued: 2025-03-12\n- Expires: 2028-03-12\n- Issuer: Midwest Safety Training",
+    "expected": { "is_there_one": true, "result": "approved" }
+  },
+  {
+    "id": "cert-expired",
+    "worker_name": "Jon C.",
+    "requirement_name": "Forklift cert",
+    "requirement_type": "certificate",
+    "document": "# Forklift operator certificate\n\n- Worker: Jon C.\n- Expires: 2020-01-01\n- Status: expired",
+    "expected": { "is_there_one": true, "result": "denied" }
+  },
+  {
+    "id": "drug-fail",
+    "worker_name": "Jon C.",
+    "requirement_name": "Drug test",
+    "requirement_type": "test",
+    "document": "worker: Jon C.\npanel: 5-panel\ncollected_on: 2026-09-02\nresult: positive",
+    "expected": { "is_there_one": true, "result": "denied" }
+  },
+  {
+    "id": "drug-pass",
+    "worker_name": "Claudia L.",
+    "requirement_name": "Drug test",
+    "requirement_type": "test",
+    "document": "worker: Claudia L.\npanel: 10-panel\ncollected_on: 2026-08-21\nresult: negative",
+    "expected": { "is_there_one": true, "result": "approved" }
+  },
+  {
+    "id": "hep-b-positive",
+    "worker_name": "Amy Z.",
+    "requirement_name": "Hep B titer",
+    "requirement_type": "email",
+    "document": "Your Hepatitis B titer results have been processed and documented.\nHepatitis B result: positive\nThe worker currently has Hepatitis B.",
+    "expected": { "is_there_one": true, "result": "positive" }
+  },
+  {
+    "id": "hep-b-processed-only",
+    "worker_name": "Amy Z.",
+    "requirement_name": "Hep B titer",
+    "requirement_type": "email",
+    "document": "Your Hepatitis B titer results have been processed and documented.",
+    "expected": { "is_there_one": true, "result": "denied" }
+  },
+  {
+    "id": "i9-pass",
+    "worker_name": "Jon C.",
+    "requirement_name": "I-9",
+    "requirement_type": "email",
+    "document": "From: i9desk@client-verify.example\nSubject: I-9 Section 2 complete — Jon C.\nSection 1 completed. Section 2 verified List A passport. Eligible to work.",
+    "expected": { "is_there_one": true, "result": "approved" }
+  },
+  {
+    "id": "wrong-worker",
+    "worker_name": "Jon C.",
+    "requirement_name": "I-9",
+    "requirement_type": "email",
+    "document": "Subject: I-9 complete — Maria R.\nMaria R. is eligible to work.",
+    "expected": { "is_there_one": false, "result": "missing" }
+  }
+]

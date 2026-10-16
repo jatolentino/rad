@@ -20,6 +20,30 @@ export type Roster = {
   workers: RosterWorker[];
 };
 
+export type SimRequirement = {
+  name: string;
+  type: "certificate" | "email" | "test";
+  path: string;
+  status: string | null;
+};
+
+export type SimWorker = {
+  id: string;
+  worker: string;
+  role: string;
+  requirements: Record<string, SimRequirement>;
+};
+
+export type SimPayload = {
+  workers: SimWorker[];
+  complete?: boolean;
+  error?: string | null;
+};
+
+export function rosterKey(name: string): string {
+  return name.replace(/\./g, "").replace(/\s+/g, "_");
+}
+
 export type CreateLlmResponse = {
   workers: Array<{
     name: string;

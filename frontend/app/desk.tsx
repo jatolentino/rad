@@ -1,7 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Roster, RosterWorker } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { Providers } from "./providers";
+import {
+  createDesk,
+  loadDesk,
+  resetDesk,
+  setQuery,
+  simulateDesk,
+} from "@/lib/store/deskSlice";
+import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
+import type { RootState } from "@/lib/store";
+import type { SimRequirement, SimWorker } from "@/lib/types";
+import { rosterKey } from "@/lib/types";
 
 const AVATAR_TONES = [
   "bg-[#ddd6fe] text-[#5b21b6]",
@@ -19,6 +30,63 @@ function initials(name: string): string {
   return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
+function statusLabel(requirement?: SimRequirement): string | null {
+  const value = requirement?.status;
+  if (typeof value !== "string" || !value) {
+    return null;
+  }
+  return value;
+}
+
+function isInfectionScreen(name: string): boolean {
+  return /\b(hep(?:atitis)?(?:\s*b)?|tb|tuberculosis)\b/i.test(name);
+}
+
+function requirementClears(requirement?: SimRequirement): boolean {
+  const value = statusLabel(requirement)?.toLowerCase();
+  if (!value || !requirement) {
+    return false;
+  }
+  if (isInfectionScreen(requirement.name)) {
+    return value === "negative";
+  }
+  return value === "approved";
+}
+
+function resultTone(status?: string | null): string {
+  if (!status) {
+    return "text-slate-400";
+  }
+  const value = status.toLowerCase();
+  if (value === "approved" || value === "negative") {
+    return "text-emerald-700";
+  }
+  if (
+    value === "positive" ||
+    value === "denied" ||
+    value === "not approved" ||
+    value === "missing"
+  ) {
+    return "text-red-700";
+  }
+  return "text-slate-600";
+}
+
+function ReqCell({ requirement }: { requirement?: SimRequirement }) {
+  if (!requirement) {
+    return <span className="text-slate-300">—</span>;
+  }
+  const status = statusLabel(requirement);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span>{requirement.name}</span>
+      {status ? (
+        <span className={`font-medium ${resultTone(status)}`}>{status}</span>
+      ) : null}
+    </span>
+  );
+}
+
 function Avatar({ name, index }: { name: string; index: number }) {
   return (
     <span
@@ -30,83 +98,44 @@ function Avatar({ name, index }: { name: string; index: number }) {
 }
 
 export function Desk() {
-  const [workers, setWorkers] = useState<RosterWorker[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  return (
+    <Providers>
+      <DeskApp />
+    </Providers>
+  );
+}
 
-  const loadRoster = useCallback(async () => {
-    const response = await fetch("/api/roster");
-    const body = (await response.json()) as
-      | Roster
-      | { workers: RosterWorker[]; error?: string };
-    setWorkers(body.workers ?? []);
-  }, []);
+function DeskApp() {
+  const dispatch = useAppDispatch();
+  const workers = useAppSelector((state: RootState) => state.desk.workers);
+  const simWorkers = useAppSelector((state: RootState) => state.desk.simWorkers);
+  const loading = useAppSelector((state: RootState) => state.desk.loading);
+  const creating = useAppSelector((state: RootState) => state.desk.creating);
+  const resetting = useAppSelector((state: RootState) => state.desk.resetting);
+  const simulating = useAppSelector((state: RootState) => state.desk.simulating);
+  const query = useAppSelector((state: RootState) => state.desk.query);
+  const error = useAppSelector((state: RootState) => state.desk.error);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        await loadRoster();
-      } catch {
-        if (!cancelled) {
-          setError("Could not load the roster.");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadRoster]);
-
-  async function onCreate() {
-    setCreating(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/create", { method: "POST" });
-      const body = (await response.json()) as Roster & { error?: string };
-      if (!response.ok) {
-        throw new Error(body.error ?? "Create failed");
-      }
-      setWorkers(body.workers);
-      setQuery("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
-    } finally {
-      setCreating(false);
-    }
-  }
+    void dispatch(loadDesk());
+  }, [dispatch]);
 
   async function onReset() {
-    setResetting(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/reset", { method: "POST" });
-      const body = (await response.json()) as {
-        workers?: RosterWorker[];
-        error?: string;
-      };
-      if (!response.ok) {
-        throw new Error(body.error ?? "Reset failed");
-      }
-      setWorkers([]);
-      setQuery("");
+    const result = await dispatch(resetDesk());
+    if (resetDesk.fulfilled.match(result)) {
       setConfirmReset(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Reset failed");
-    } finally {
-      setResetting(false);
     }
   }
 
   const hasWorkers = workers.length > 0;
+  const simByKey = useMemo(() => {
+    const map = new Map<string, SimWorker>();
+    for (const item of simWorkers) {
+      map.set(item.worker, item);
+    }
+    return map;
+  }, [simWorkers]);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) {
@@ -165,7 +194,7 @@ export function Desk() {
               <button
                 type="button"
                 onClick={() => setConfirmReset(true)}
-                disabled={creating || resetting}
+                disabled={creating || resetting || simulating}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 Reset
@@ -173,16 +202,21 @@ export function Desk() {
             ) : null}
             <button
               type="button"
-              disabled
-              title="Simulate will parse documents in the next step"
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-400"
+              onClick={() => void dispatch(simulateDesk())}
+              disabled={!hasWorkers || creating || resetting || simulating}
+              title={
+                hasWorkers
+                  ? "Parse documents and mark each requirement"
+                  : "Create workers first"
+              }
+              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:text-slate-400"
             >
-              Simulate
+              {simulating ? "Simulating…" : "Simulate"}
             </button>
             <button
               type="button"
-              onClick={onCreate}
-              disabled={creating || resetting}
+              onClick={() => void dispatch(createDesk())}
+              disabled={creating || resetting || simulating}
               className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-70"
             >
               {creating ? "Creating…" : "+ Create"}
@@ -204,7 +238,7 @@ export function Desk() {
               </span>
               <input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => dispatch(setQuery(event.target.value))}
                 placeholder="Search by name or role"
                 className="w-full bg-transparent outline-none placeholder:text-slate-400"
               />
@@ -230,20 +264,30 @@ export function Desk() {
         ) : (
           <section className="overflow-hidden rounded-2xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
             <p className="border-b border-slate-100 px-5 py-3 text-sm text-slate-500">
-              Total {visible.length} {visible.length === 1 ? "person" : "people"}
+              Total {visible.length} {visible.length === 1 ? "worker" : "workers"}
             </p>
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="text-[13px] font-medium text-slate-500">
-                  <th className="px-5 py-3">Person</th>
+                  <th className="px-5 py-3">Worker</th>
                   <th className="px-5 py-3">Role</th>
                   <th className="px-5 py-3">Req1</th>
                   <th className="px-5 py-3">Req2</th>
                   <th className="px-5 py-3">Req3</th>
+                  <th className="px-5 py-3">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {visible.map((worker, index) => (
+                {visible.map((worker, index) => {
+                  const sim = simByKey.get(rosterKey(worker.name));
+                  const reqs = [
+                    sim?.requirements.req1,
+                    sim?.requirements.req2,
+                    sim?.requirements.req3,
+                  ];
+                  const parsed = reqs.every((item) => typeof item?.status === "string");
+                  const compliant = parsed && reqs.every((item) => requirementClears(item));
+                  return (
                   <tr
                     key={worker.slug}
                     className="border-t border-slate-100 hover:bg-violet-50/40"
@@ -262,11 +306,29 @@ export function Desk() {
                       </div>
                     </td>
                     <td className="px-5 py-3 text-slate-600">{worker.roleTitle}</td>
-                    <td className="px-5 py-3 text-slate-300">—</td>
-                    <td className="px-5 py-3 text-slate-300">—</td>
-                    <td className="px-5 py-3 text-slate-300">—</td>
+                    {reqs.map((requirement, reqIndex) => (
+                      <td key={reqIndex} className="px-5 py-3 text-slate-700">
+                        <ReqCell requirement={requirement} />
+                      </td>
+                    ))}
+                    <td className="px-5 py-3">
+                      {parsed ? (
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            compliant
+                              ? "bg-emerald-50 text-emerald-700"
+                              : "bg-red-50 text-red-700"
+                          }`}
+                        >
+                          {compliant ? "Compliant" : "Non-compliant"}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </section>

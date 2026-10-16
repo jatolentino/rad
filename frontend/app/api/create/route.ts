@@ -28,9 +28,15 @@ function systemPrompt(): string {
     "Return one worker per role in the catalog. Do not invent roles.",
     "Omit at least three required documents by listing them in missing.",
     "Do not include omitted certs, emails, or drug-test rows in those arrays.",
-    "Cert markdown is a short certificate. Emails are vendor plain text (From/To/Subject/Date/body).",
-    "Drug tests: worker, panel, collected_on (ISO date), result (usually negative).",
-    "All content is fictional. No real SSNs or medical details.",
+    "Cert markdown is a short certificate with issued and expiry dates.",
+    "Emails are vendor plain text (From/To/Subject/Date/body).",
+    "Every medical or lab email MUST state the actual result in one clear sentence. Never say only that results were processed.",
+    "Hep B titer emails MUST say either 'Hepatitis B result: positive' (worker currently has Hepatitis B) or 'Hepatitis B result: negative' (worker does not have Hepatitis B). Include at least one positive Hep B email among generated workers.",
+    "TB test emails MUST say 'TB result: positive' or 'TB result: negative'.",
+    "I-9 emails MUST say whether Section 1 and Section 2 are complete.",
+    "Background-check emails MUST say clear or not clear.",
+    "Drug tests: worker, panel, collected_on (ISO date), result exactly 'negative' or 'positive'. Include at least one positive drug test.",
+    "All content is fictional. No real SSNs.",
   ].join(" ");
 }
 
@@ -52,8 +58,9 @@ function userPrompt(): string {
       ],
       emails: [
         {
-          filename: "jon-c-i9.txt",
-          content: "From: ...\n",
+          filename: "amy-z-hep-b.txt",
+          content:
+            "From: lab@example.com\nTo: amy.z@company.com\nSubject: Hepatitis B titer\nYour titer results have been processed.\nHepatitis B result: positive\nThe worker currently has Hepatitis B.\n",
         },
       ],
       drugTests: [
