@@ -56,10 +56,6 @@ export function buildRoster(payload: CreateLlmResponse): {
     };
   });
 
-  if (missing.size < 3) {
-    throw new Error("Create must omit at least 3 required documents");
-  }
-
   for (const key of missing) {
     const [slug, requirementId] = key.split("::");
     const worker = workers.find((item) => item.slug === slug);

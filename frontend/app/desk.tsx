@@ -190,16 +190,14 @@ function DeskApp() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {hasWorkers ? (
-              <button
-                type="button"
-                onClick={() => setConfirmReset(true)}
-                disabled={creating || resetting || simulating}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              >
-                Reset
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => void dispatch(createDesk())}
+              disabled={creating || resetting || simulating}
+              className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-70"
+            >
+              {creating ? "Creating…" : "+ Create"}
+            </button>
             <button
               type="button"
               onClick={() => void dispatch(simulateDesk())}
@@ -209,17 +207,26 @@ function DeskApp() {
                   ? "Parse documents and mark each requirement"
                   : "Create workers first"
               }
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:text-slate-400"
+              className={`rounded-full border border-transparent px-4 py-2 text-sm shadow-sm transition-colors ${
+                hasWorkers
+                  ? "bg-blue-400 font-medium text-white hover:bg-blue-700 active:bg-blue-950 disabled:bg-blue-400 disabled:hover:bg-blue-400"
+                  : "bg-blue-200 font-light text-gray-400"
+              }`}
             >
               {simulating ? "Simulating…" : "Simulate"}
             </button>
             <button
               type="button"
-              onClick={() => void dispatch(createDesk())}
-              disabled={creating || resetting || simulating}
-              className="rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:opacity-70"
+              onClick={() => setConfirmReset(true)}
+              disabled={!hasWorkers || creating || resetting || simulating}
+              title={hasWorkers ? "Delete generated workers and documents" : "Create workers first"}
+              className={`rounded-full border border-transparent px-4 py-2 text-sm shadow-sm transition-colors ${
+                hasWorkers
+                  ? "bg-red-400 font-medium text-white hover:bg-red-700 active:bg-red-950 disabled:bg-red-400 disabled:hover:bg-red-400"
+                  : "bg-red-200 font-light text-gray-400"
+              }`}
             >
-              {creating ? "Creating…" : "+ Create"}
+              Reset
             </button>
           </div>
         </div>

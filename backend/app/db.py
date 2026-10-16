@@ -5,8 +5,8 @@ from app.models import WorkerRecord, WorkersPayload
 
 _client: AsyncIOMotorClient | None = None
 
-PRE_COLLECTION = "pre_processed"
-PROCESSED_COLLECTION = "processed"
+PRE_COLLECTION = settings.mongodb_pre_collection
+PROCESSED_COLLECTION = settings.mongodb_processed_collection
 DOC_ID = "latest"
 
 

@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     mongodb_uri: str = ""
     mongodb_db: str = "clearance"
+    mongodb_pre_collection: str = "pre_processed"
+    mongodb_processed_collection: str = "processed"
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_host: str = "https://cloud.langfuse.com"

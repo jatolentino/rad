@@ -12,25 +12,24 @@ from app.config import settings
 from app.ingest import absolute_path
 from app.models import ParseVerdict, RequirementRecord, ResultLabel
 
-# Local prompt is disabled so Simulate must load parse-requirement from Langfuse.
-# FALLBACK_PROMPT = """You extract the outcome of one staffing clearance document.
-#
-# Worker: {worker_name}
-# Requirement: {requirement_name}
-# Type: {requirement_type}
-#
-# Document:
-# {document}
-#
-# Return:
-# - is_there_one: true only if this document is about this worker and this requirement.
-# - result: one of positive, negative, approved, denied, missing.
-#
-# Result rules:
-# - Hepatitis B / Hep B / TB: use positive or negative. Positive means the worker HAS the infection. Negative means they do not. Do not treat 'processed' or 'documented' as negative or approved.
-# - Certificates, I-9, background checks, drug tests: use approved if the credential is currently valid (unexpired cert, completed I-9, clear background, negative drug screen). Otherwise denied.
-# - If the document does not state a real outcome, use denied (or missing if there is no usable document).
-# """
+FALLBACK_PROMPT = """You extract the outcome of one staffing clearance document.
+
+Worker: {worker_name}
+Requirement: {requirement_name}
+Type: {requirement_type}
+
+Document:
+{document}
+
+Return:
+- is_there_one: true only if this document is about this worker and this requirement.
+- result: one of positive, negative, approved, denied, missing.
+
+Result rules:
+- Hepatitis B / Hep B / TB: use positive or negative. Positive means the worker HAS the infection. Negative means they do not. Do not treat 'processed' or 'documented' as negative or approved.
+- Certificates, I-9, background checks, drug tests: use approved if the credential is currently valid (unexpired cert, completed I-9, clear background, negative drug screen). Otherwise denied.
+- If the document does not state a real outcome, use denied (or missing if there is no usable document).
+"""
 
 logger = logging.getLogger(__name__)
 
@@ -39,24 +38,6 @@ _langfuse_host: str | None = None
 _langfuse_disabled = False
 _langfuse_warned = False
 _logged_prompt_source = False
-
-LANGFUSE_HOSTS = (
-    "https://us.cloud.langfuse.com",
-    "https://cloud.langfuse.com",
-    "https://cloud.eu.langfuse.com",
-    "https://jp.cloud.langfuse.com",
-)
-
-
-def _candidate_hosts() -> list[str]:
-    configured = (settings.langfuse_host or "").rstrip("/")
-    hosts: list[str] = []
-    if configured:
-        hosts.append(configured)
-    for host in LANGFUSE_HOSTS:
-        if host not in hosts:
-            hosts.append(host)
-    return hosts
 
 
 def langfuse_client() -> Langfuse | None:
@@ -68,29 +49,26 @@ def langfuse_client() -> Langfuse | None:
         return None
     if _langfuse is not None:
         return _langfuse
-    for host in _candidate_hosts():
-        client = Langfuse(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            host=host,
-        )
-        try:
-            ok = bool(client.auth_check())
-        except Exception:
-            ok = False
-        if ok:
-            _langfuse = client
-            _langfuse_host = host
-            return _langfuse
+    host = (settings.langfuse_host or "").rstrip("/")
+    client = Langfuse(
+        public_key=settings.langfuse_public_key,
+        secret_key=settings.langfuse_secret_key,
+        host=host,
+    )
+    try:
+        ok = bool(client.auth_check())
+    except Exception:
+        ok = False
+    if ok:
+        _langfuse = client
+        _langfuse_host = host
+        return _langfuse
     _langfuse_disabled = True
     if not _langfuse_warned:
         _langfuse_warned = True
         logger.warning(
-            "Langfuse rejected the API keys for host %s. "
-            "Set LANGFUSE_HOST to the URL in your Langfuse browser bar, "
-            "for example https://us.cloud.langfuse.com (US) or "
-            "https://cloud.langfuse.com (EU).",
-            settings.langfuse_host,
+            "Langfuse rejected the API keys for LANGFUSE_HOST=%s.",
+            host,
         )
     return None
 
@@ -138,12 +116,15 @@ def build_prompt(
     document: str,
 ) -> str:
     global _logged_prompt_source
+    local = FALLBACK_PROMPT.format(
+        worker_name=worker_name,
+        requirement_name=requirement.name,
+        requirement_type=requirement.type,
+        document=document[:12000],
+    )
     client = langfuse_client()
     if client is None:
-        raise RuntimeError(
-            "Langfuse is not connected, so the parse prompt cannot be loaded. "
-            "Check LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, and LANGFUSE_HOST."
-        )
+        return local
     try:
         prompt = client.get_prompt("parse-requirement")
         compiled = prompt.compile(
@@ -152,25 +133,16 @@ def build_prompt(
             requirement_type=requirement.type,
             document=document[:12000],
         )
-    except Exception as error:
-        raise RuntimeError(
-            "Could not load Langfuse prompt 'parse-requirement'. "
-            "Create it in Prompt Management with variables "
-            "{{worker_name}}, {{requirement_name}}, {{requirement_type}}, {{document}}."
-        ) from error
-    if not _logged_prompt_source:
-        _logged_prompt_source = True
-        logger.info(
-            "Using Langfuse prompt 'parse-requirement' from %s",
-            _langfuse_host,
-        )
-    return compiled
-    # return FALLBACK_PROMPT.format(
-    #     worker_name=worker_name,
-    #     requirement_name=requirement.name,
-    #     requirement_type=requirement.type,
-    #     document=document[:12000],
-    # )
+        if not _logged_prompt_source:
+            _logged_prompt_source = True
+            logger.info(
+                "Using Langfuse prompt 'parse-requirement' from %s",
+                _langfuse_host,
+            )
+        return f"{compiled}\n\n{local}"
+    except Exception:
+        logger.info("Langfuse prompt missing; using the local parse prompt.")
+        return local
 
 
 def make_llm() -> ChatOpenAI:
